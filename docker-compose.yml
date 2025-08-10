@@ -177,6 +177,7 @@ services:
     image: mattermost/mattermost-team-edition:latest
     container_name: mattermost
     restart: unless-stopped
+    platform: linux/amd64
     ports:
       - "8065:8065" # LAN-Zugriff auf Mattermost
     environment:
