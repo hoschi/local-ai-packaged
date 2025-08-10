@@ -14,6 +14,12 @@ volumes:
   langfuse_clickhouse_data:
   langfuse_clickhouse_logs:
   langfuse_minio_data:
+  mattermost_data:
+  mattermost_config:
+  mattermost_logs:
+  mattermost_plugins:
+  mattermost_client_plugins:
+  mattermost_db_data:
 
 x-n8n: &service-n8n
   image: n8nio/n8n:latest
@@ -166,6 +172,37 @@ services:
       options:
         max-size: "1m"
         max-file: "1"
+
+  mattermost:
+    image: mattermost/mattermost-team-edition:latest
+    container_name: mattermost
+    restart: unless-stopped
+    ports:
+      - "8065:8065" # LAN-Zugriff auf Mattermost
+    environment:
+      - MM_CONFIG=/mattermost/config/config.json
+      - MM_SQLSETTINGS_DRIVERNAME=postgres
+      - MM_SQLSETTINGS_DATASOURCE=postgres://${MATTERMOST_DB_USER}:${MATTERMOST_DB_PASSWORD}@mattermost-db:5432/${MATTERMOST_DB_NAME}?sslmode=disable&connect_timeout=10
+      - MM_SERVICESETTINGS_SITEURL=${MATTERMOST_SITE_URL}
+    depends_on:
+      - mattermost-db
+    volumes:
+      - mattermost_data:/mattermost/data
+      - mattermost_config:/mattermost/config
+      - mattermost_logs:/mattermost/logs
+      - mattermost_plugins:/mattermost/plugins
+      - mattermost_client_plugins:/mattermost/client/plugins
+
+  mattermost-db:
+    image: postgres:15
+    container_name: mattermost-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${MATTERMOST_DB_USER}
+      - POSTGRES_PASSWORD=${MATTERMOST_DB_PASSWORD}
+      - POSTGRES_DB=${MATTERMOST_DB_NAME}
+    volumes:
+      - mattermost_db_data:/var/lib/postgresql/data
 
   langfuse-worker:
     image: langfuse/langfuse-worker:3
