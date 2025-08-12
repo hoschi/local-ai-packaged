@@ -48,8 +48,10 @@ def run_docker_command(container_name, command_args, capture_output=False, use_n
         return None
     except subprocess.CalledProcessError as e:
         print(f"Fehler beim Ausführen des Befehls im Container: {e}")
-        print(f"Stdout (falls vorhanden): {e.stdout.strip()}")
-        print(f"Stderr: {e.stderr.strip()}")
+        stdout_msg = e.stdout.strip() if e.stdout else "[Keine Standardausgabe]"
+        stderr_msg = e.stderr.strip() if e.stderr else "[Keine Standardfehlerausgabe]"
+        print(f"Stdout (falls vorhanden): {stdout_msg}")
+        print(f"Stderr: {stderr_msg}")
         raise
     except FileNotFoundError:
         print("Fehler: Der Befehl 'docker' wurde nicht gefunden. Stellen Sie sicher, dass Docker installiert und in Ihrem PATH ist.")
@@ -85,8 +87,10 @@ def run_host_command(command, capture_output=False, shell=True):
         return None
     except subprocess.CalledProcessError as e:
         print(f"Fehler beim Ausführen des Host-Befehls: {e}")
-        print(f"Stdout (falls vorhanden): {e.stdout.strip()}")
-        print(f"Stderr: {e.stderr.strip()}")
+        stdout_msg = e.stdout.strip() if e.stdout else "[Keine Standardausgabe]"
+        stderr_msg = e.stderr.strip() if e.stderr else "[Keine Standardfehlerausgabe]"
+        print(f"Stdout (falls vorhanden): {stdout_msg}")
+        print(f"Stderr: {stderr_msg}")
         raise
     except FileNotFoundError:
         print("Fehler: Der Befehl wurde auf dem Host nicht gefunden.")
@@ -115,13 +119,12 @@ def export_n8n_data(container_name, host_backup_base_path, backup_description=No
 
     host_destination_path = os.path.join(host_backup_base_path, backup_dir_name)
 
-    # Temporäres Verzeichnis im Container erstellen (direkt, ohne n8n-Präfix)
     try:
         container_temp_dir = run_docker_command(
             container_name,
             "mktemp -d",
             capture_output=True,
-            use_n8n_prefix=False # Wichtige Änderung hier!
+            use_n8n_prefix=False
         )
     except Exception as e:
         print(f"Konnte temporäres Verzeichnis im Container nicht erstellen: {e}")
@@ -141,17 +144,12 @@ def export_n8n_data(container_name, host_backup_base_path, backup_description=No
         f"export:credentials --backup --output={container_temp_dir} --pretty"
     )
 
-    # Backup-Verzeichnis auf dem Host erstellen
     os.makedirs(host_destination_path, exist_ok=True)
     print(f"Kopiere Backup-Daten von Container '{container_name}:{container_temp_dir}' nach Host '{host_destination_path}'...")
-    # Sicherstellen, dass docker cp das Verzeichnis selbst und nicht nur seinen Inhalt kopiert
-    # oder alternativ den Inhalt des Verzeichnisses kopieren
-    # Hier kopieren wir den Inhalt ('.') in das neu erstellte Host-Verzeichnis
     run_host_command(f"docker cp {container_name}:{container_temp_dir}/. {host_destination_path}")
 
-    # Temporäres Verzeichnis im Container löschen (direkt, ohne n8n-Präfix)
     print(f"Lösche temporäres Verzeichnis im Container: {container_temp_dir}")
-    run_docker_command(container_name, f"rm -rf {container_temp_dir}", use_n8n_prefix=False) # Wichtige Änderung hier!
+    run_docker_command(container_name, f"rm -rf {container_temp_dir}", use_n8n_prefix=False)
 
     print(f"Backup erfolgreich erstellt unter {host_destination_path} auf dem Host.")
     return host_destination_path
@@ -172,13 +170,12 @@ def import_n8n_data(container_name, host_backup_base_path, backup_folder_name):
         print("Bitte stellen Sie sicher, dass der Name des Backup-Ordners korrekt ist und dieser existiert.")
         return
 
-    # Temporäres Verzeichnis im Container erstellen (direkt, ohne n8n-Präfix)
     try:
         container_temp_dir = run_docker_command(
             container_name,
             "mktemp -d",
             capture_output=True,
-            use_n8n_prefix=False # Wichtige Änderung hier!
+            use_n8n_prefix=False
         )
     except Exception as e:
         print(f"Konnte temporäres Verzeichnis im Container nicht erstellen: {e}")
@@ -188,6 +185,11 @@ def import_n8n_data(container_name, host_backup_base_path, backup_folder_name):
 
     print(f"Kopiere Backup-Daten von Host '{host_source_path}' nach Container '{container_name}:{container_temp_dir}'...")
     run_host_command(f"docker cp {host_source_path}/. {container_name}:{container_temp_dir}")
+
+    # *** HIER IST DIE WICHTIGSTE ÄNDERUNG ***
+    # Korrigiere die Berechtigungen der kopierten Dateien, damit der 'node' Benutzer sie lesen kann.
+    print(f"Korrigiere Dateiberechtigungen im Container für Benutzer 'node'...")
+    run_docker_command(container_name, f"chown -R node:node {container_temp_dir}", use_n8n_prefix=False)
 
     print("Importiere Workflows im Container...")
     run_docker_command(
@@ -201,9 +203,8 @@ def import_n8n_data(container_name, host_backup_base_path, backup_folder_name):
         f"import:credentials --separate --input={container_temp_dir}"
     )
 
-    # Temporäres Verzeichnis im Container löschen (direkt, ohne n8n-Präfix)
     print(f"Lösche temporäres Verzeichnis im Container: {container_temp_dir}")
-    run_docker_command(container_name, f"rm -rf {container_temp_dir}", use_n8n_prefix=False) # Wichtige Änderung hier!
+    run_docker_command(container_name, f"rm -rf {container_temp_dir}", use_n8n_prefix=False)
 
     print(f"Daten erfolgreich importiert aus {host_source_path} auf dem Host.")
 
@@ -230,7 +231,6 @@ def cleanup_old_backups(host_backup_base_path, retention_hours=24):
             continue
 
         try:
-            # Zeitstempel aus dem Verzeichnisnamen extrahieren (z.B. backup_JJJJMMTT_HHMMSS_beschreibung)
             parts = dir_name.split('_')
             if len(parts) >= 3 and parts[0] == "backup":
                 timestamp_str = f"{parts[1]}_{parts[2]}"
@@ -264,7 +264,6 @@ def main():
 
     subparsers = parser.add_subparsers(dest="command", required=True, help="Verfügbare Befehle")
 
-    # Export-Befehl
     export_parser = subparsers.add_parser(
         "export",
         help="Exportiert n8n-Daten (Workflows und Anmeldeinformationen) in einen neuen zeitgestempelten Backup-Ordner auf dem Host.",
@@ -282,7 +281,6 @@ def main():
         help="Anzahl der Stunden, für die Backups aufbewahrt werden sollen. Backups, die älter sind, werden gelöscht (Standard: 24)."
     )
 
-    # Import-Befehl
     import_parser = subparsers.add_parser(
         "import",
         help="Importiert n8n-Daten aus einem angegebenen Backup-Ordner auf dem Host.",
@@ -301,15 +299,15 @@ def main():
     try:
         if args.command == "export":
             exported_path = export_n8n_data(args.container_name, args.host_path, args.description)
-            print(f"\nExport abgeschlossen. Backup erstellt unter: {exported_path} auf dem Host.")
-            cleanup_old_backups(args.host_path, args.retention_hours)
-            print("Backup-Prozess abgeschlossen.")
+            if exported_path:
+                print(f"\nExport abgeschlossen. Backup erstellt unter: {exported_path} auf dem Host.")
+                cleanup_old_backups(args.host_path, args.retention_hours)
+                print("Backup-Prozess abgeschlossen.")
         elif args.command == "import":
             import_n8n_data(args.container_name, args.host_path, args.backup_folder_name)
             print("Import-Prozess abgeschlossen.")
     except Exception as e:
         print(f"\nSkriptausführung fehlgeschlagen: {e}")
-        #raise # Uncomment this line to re-raise the exception and halt the script on failure
 
 if __name__ == "__main__":
     main()
