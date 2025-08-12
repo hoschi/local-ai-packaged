@@ -103,6 +103,8 @@ services:
     restart: unless-stopped
     expose:
       - 5678/tcp
+    environment:
+      - WEBHOOK_URL=http://192.168.178.68:5678
     volumes:
       - n8n_storage:/home/node/.n8n
       - ./n8n/backup:/backup
