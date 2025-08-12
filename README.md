@@ -300,6 +300,22 @@ language model and Qdrant as your vector store.
 > workflows. While it’s not fully optimized for production environments, it
 > combines robust components that work well together for proof-of-concept
 > projects. You can customize it to meet your specific needs
+## Backup / Restore
+
+### n8n
+
+```
+python3 n8n/n8n_backup.py \
+  --host-path /Users/hoschi/repos/local-ai-packaged/n8n/user_backup \
+  --env-file ./.env \
+  n8n export --description 'main-instance'
+```
+```
+python3 n8n/n8n_backup.py \
+  --host-path /Users/hoschi/repos/local-ai-packaged/n8n/user_backup \
+  --env-file ./.env \
+  n8n import backup_20250812_142510_maininstance
+```
 
 ## Upgrading
 

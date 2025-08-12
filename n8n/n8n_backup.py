@@ -4,10 +4,6 @@ import os
 import shutil
 import argparse
 
-"""
-" Usage:
-"""
-
 def load_env_file(filepath):
     """Liest eine .env-Datei und gibt die Variablen als Dictionary zurück."""
     env_vars = {}
@@ -40,7 +36,7 @@ def run_docker_command(container_name, command_args, capture_output=False, use_n
 
     cmd.extend(command_args)
 
-    print(f"Führe Befehl im Container aus (Umgebungsvariablen werden übergeben)...")
+    print("Führe Befehl im Container aus (Umgebungsvariablen werden übergeben)...")
     try:
         result = subprocess.run(cmd, check=True, capture_output=capture_output, text=True, encoding='utf-8')
         return result.stdout.strip() if capture_output else None
@@ -73,26 +69,15 @@ def export_n8n_data(container_name, host_backup_base_path, n8n_env_vars, backup_
 
     print(f"Erstelle Backup in {host_destination_path}")
 
-    # Schleife über die Datentypen, um für jeden eine saubere Umgebung zu garantieren
     for data_type in ["workflow", "credentials"]:
         print(f"\n--- Exportiere {data_type.capitalize()}s ---")
-
-        # Erstelle für JEDE Operation ein NEUES temporäres Verzeichnis
         container_temp_dir = run_docker_command(container_name, "mktemp -d", capture_output=True, use_n8n_prefix=False)
-
         try:
-            # Führe den Export in das saubere Verzeichnis aus
             run_docker_command(container_name, f"export:{data_type} --backup --output={container_temp_dir}", env_vars=n8n_env_vars)
-
-            # Wähle den korrekten Zielpfad auf dem Host
             host_target_path = host_workflows_path if data_type == "workflow" else host_credentials_path
-
-            # Kopiere die Daten
             run_host_command(f"docker cp '{container_name}:{container_temp_dir}/.' '{host_target_path}/'")
             print(f"{data_type.capitalize()}s erfolgreich nach '{host_target_path}' exportiert.")
-
         finally:
-            # Zerstöre das temporäre Verzeichnis vollständig
             print(f"Lösche temporäres Verzeichnis im Container: {container_temp_dir}")
             run_docker_command(container_name, f"rm -rf {container_temp_dir}", use_n8n_prefix=False)
 
@@ -100,7 +85,7 @@ def export_n8n_data(container_name, host_backup_base_path, n8n_env_vars, backup_
     return host_destination_path
 
 def import_n8n_data(container_name, host_backup_base_path, backup_folder_name, n8n_env_vars):
-    # ... (Diese Funktion ist bereits perfekt und bleibt unverändert)
+    """Importiert n8n-Daten und stellt eine saubere Trennung zwischen den Schritten sicher."""
     host_source_path = os.path.join(host_backup_base_path, backup_folder_name)
     host_workflows_path = os.path.join(host_source_path, "workflows")
     host_credentials_path = os.path.join(host_source_path, "credentials")
@@ -111,6 +96,7 @@ def import_n8n_data(container_name, host_backup_base_path, backup_folder_name, n
 
     container_temp_dir = run_docker_command(container_name, "mktemp -d", capture_output=True, use_n8n_prefix=False)
     try:
+        # Schritt 1: Workflows importieren
         print("\n--- Importiere Workflows ---")
         host_abs_workflows = os.path.abspath(host_workflows_path)
         if os.listdir(host_abs_workflows):
@@ -120,8 +106,12 @@ def import_n8n_data(container_name, host_backup_base_path, backup_folder_name, n
         else:
             print("Keine Workflow-Dateien gefunden, überspringe.")
 
+        # Schritt 2: Anmeldeinformationen importieren
         print("\n--- Importiere Anmeldeinformationen ---")
-        run_docker_command(container_name, f"rm -f {container_temp_dir}/*", use_n8n_prefix=False)
+
+        print(f"Leere temporäres Verzeichnis: {container_temp_dir}")
+        run_docker_command(container_name, ['sh', '-c', f'rm -rf {container_temp_dir}/*'], use_n8n_prefix=False)
+
         host_abs_creds = os.path.abspath(host_credentials_path)
         if os.listdir(host_abs_creds):
             pipe_cmd = f"tar -c -C '{host_abs_creds}' . | docker exec -i {container_name} tar -x -C {container_temp_dir}"
