@@ -6,8 +6,6 @@ import argparse
 
 """
 " Usage:
-" https://aistudio.google.com/prompts/1J7fFba4vXBjYd5eF_KvUgXkjB5c-1ukH
-" https://aistudio.google.com/prompts/1ZOLhdlY_gzAhkz4s_lLBkk_dQgubnxoG
 """
 
 def load_env_file(filepath):
@@ -62,7 +60,7 @@ def run_host_command(command, shell=True):
         raise
 
 def export_n8n_data(container_name, host_backup_base_path, n8n_env_vars, backup_description=None):
-    """Exportiert n8n-Daten mit den korrekten Umgebungsvariablen."""
+    """Exportiert n8n-Daten mit sauberen, getrennten temporären Verzeichnissen für jede Operation."""
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     sanitized_description = "".join(c for c in backup_description if c.isalnum() or c in (' ', '_')).replace(' ', '_') if backup_description else ""
     backup_dir_name = f"backup_{timestamp}_{sanitized_description}" if sanitized_description else f"backup_{timestamp}"
@@ -75,28 +73,30 @@ def export_n8n_data(container_name, host_backup_base_path, n8n_env_vars, backup_
 
     print(f"Erstelle Backup in {host_destination_path}")
 
-    # Temporäres Verzeichnis im Container erstellen
-    container_temp_dir = run_docker_command(container_name, "mktemp -d", capture_output=True, use_n8n_prefix=False)
+    # Schleife über die Datentypen, um für jeden eine saubere Umgebung zu garantieren
+    for data_type in ["workflow", "credentials"]:
+        print(f"\n--- Exportiere {data_type.capitalize()}s ---")
 
-    try:
-        # Schritt 1: Workflows exportieren
-        print("\n--- Exportiere Workflows ---")
-        run_docker_command(container_name, f"export:workflow --backup --output={container_temp_dir}", env_vars=n8n_env_vars)
-        run_host_command(f"docker cp '{container_name}:{container_temp_dir}/.' '{host_workflows_path}/'")
-        print(f"Workflows erfolgreich nach '{host_workflows_path}' exportiert.")
-        run_docker_command(container_name, f"rm -f {container_temp_dir}/*", use_n8n_prefix=False)
+        # Erstelle für JEDE Operation ein NEUES temporäres Verzeichnis
+        container_temp_dir = run_docker_command(container_name, "mktemp -d", capture_output=True, use_n8n_prefix=False)
 
-        # Schritt 2: Anmeldeinformationen exportieren
-        print("\n--- Exportiere Anmeldeinformationen ---")
-        run_docker_command(container_name, f"export:credentials --backup --output={container_temp_dir}", env_vars=n8n_env_vars)
-        run_host_command(f"docker cp '{container_name}:{container_temp_dir}/.' '{host_credentials_path}/'")
-        print(f"Anmeldeinformationen erfolgreich nach '{host_credentials_path}' exportiert.")
+        try:
+            # Führe den Export in das saubere Verzeichnis aus
+            run_docker_command(container_name, f"export:{data_type} --backup --output={container_temp_dir}", env_vars=n8n_env_vars)
 
-    finally:
-        print(f"\nLösche temporäres Verzeichnis im Container: {container_temp_dir}")
-        run_docker_command(container_name, f"rm -rf {container_temp_dir}", use_n8n_prefix=False)
+            # Wähle den korrekten Zielpfad auf dem Host
+            host_target_path = host_workflows_path if data_type == "workflow" else host_credentials_path
 
-    print("\nBackup erfolgreich erstellt.")
+            # Kopiere die Daten
+            run_host_command(f"docker cp '{container_name}:{container_temp_dir}/.' '{host_target_path}/'")
+            print(f"{data_type.capitalize()}s erfolgreich nach '{host_target_path}' exportiert.")
+
+        finally:
+            # Zerstöre das temporäre Verzeichnis vollständig
+            print(f"Lösche temporäres Verzeichnis im Container: {container_temp_dir}")
+            run_docker_command(container_name, f"rm -rf {container_temp_dir}", use_n8n_prefix=False)
+
+    print("\nBackup erfolgreich und sauber erstellt.")
     return host_destination_path
 
 def import_n8n_data(container_name, host_backup_base_path, backup_folder_name, n8n_env_vars):
