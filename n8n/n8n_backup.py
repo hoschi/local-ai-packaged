@@ -11,7 +11,7 @@ import tempfile
 " https://aistudio.google.com/prompts/1J7fFba4vXBjYd5eF_KvUgXkjB5c-1ukH
 """
 
-def run_docker_command(container_name, command_args, capture_output=False, use_n8n_prefix=True):
+def run_docker_command(container_name, command_args, capture_output=False, use_n8n_prefix=True, user=None):
     """
     Führt einen Befehl im angegebenen Docker-Container aus.
     Argumente:
@@ -20,6 +20,7 @@ def run_docker_command(container_name, command_args, capture_output=False, use_n
                                        Wenn use_n8n_prefix True ist, wird "n8n" vorangestellt.
         capture_output (bool): Ob die Standardausgabe des Befehls erfasst und zurückgegeben werden soll.
         use_n8n_prefix (bool): Ob der Befehl mit "n8n" präfixiert werden soll (für n8n CLI-Befehle).
+        user (str, optional): Der Benutzer, als der der Befehl im Container ausgeführt werden soll (z.B. 'root').
     Gibt zurück:
         str: Die Standardausgabe des Befehls, wenn capture_output True ist, ansonsten None.
     Löst aus:
@@ -28,12 +29,18 @@ def run_docker_command(container_name, command_args, capture_output=False, use_n
     if isinstance(command_args, str):
         command_args = command_args.split()
 
+    # Basis-Befehl zusammenstellen
+    base_cmd = ["docker", "exec"]
+    if user:
+        base_cmd.extend(["-u", user])
+    base_cmd.append(container_name)
+
     if use_n8n_prefix:
-        cmd = ["docker", "exec", container_name, "n8n"] + command_args
-        print(f"Führe im Container (n8n CLI) aus: {' '.join(cmd)}")
+        cmd = base_cmd + ["n8n"] + command_args
+        print(f"Führe im Container (n8n CLI, als Benutzer '{user or 'default'}') aus: {' '.join(cmd)}")
     else:
-        cmd = ["docker", "exec", container_name] + command_args
-        print(f"Führe im Container (Shell) aus: {' '.join(cmd)}")
+        cmd = base_cmd + command_args
+        print(f"Führe im Container (Shell, als Benutzer '{user or 'default'}') aus: {' '.join(cmd)}")
 
     try:
         result = subprocess.run(
@@ -149,7 +156,8 @@ def export_n8n_data(container_name, host_backup_base_path, backup_description=No
     run_host_command(f"docker cp {container_name}:{container_temp_dir}/. {host_destination_path}")
 
     print(f"Lösche temporäres Verzeichnis im Container: {container_temp_dir}")
-    run_docker_command(container_name, f"rm -rf {container_temp_dir}", use_n8n_prefix=False)
+    # Das Löschen sollte auch als root erfolgen, um Berechtigungsprobleme zu vermeiden
+    run_docker_command(container_name, f"rm -rf {container_temp_dir}", use_n8n_prefix=False, user='root')
 
     print(f"Backup erfolgreich erstellt unter {host_destination_path} auf dem Host.")
     return host_destination_path
@@ -171,11 +179,13 @@ def import_n8n_data(container_name, host_backup_base_path, backup_folder_name):
         return
 
     try:
+        # Erstelle das temporäre Verzeichnis als root, damit wir später keine Probleme haben
         container_temp_dir = run_docker_command(
             container_name,
             "mktemp -d",
             capture_output=True,
-            use_n8n_prefix=False
+            use_n8n_prefix=False,
+            user='root'
         )
     except Exception as e:
         print(f"Konnte temporäres Verzeichnis im Container nicht erstellen: {e}")
@@ -187,24 +197,27 @@ def import_n8n_data(container_name, host_backup_base_path, backup_folder_name):
     run_host_command(f"docker cp {host_source_path}/. {container_name}:{container_temp_dir}")
 
     # *** HIER IST DIE WICHTIGSTE ÄNDERUNG ***
-    # Korrigiere die Berechtigungen der kopierten Dateien, damit der 'node' Benutzer sie lesen kann.
+    # Korrigiere die Berechtigungen als 'root', da nur root das darf.
     print(f"Korrigiere Dateiberechtigungen im Container für Benutzer 'node'...")
-    run_docker_command(container_name, f"chown -R node:node {container_temp_dir}", use_n8n_prefix=False)
+    run_docker_command(container_name, f"chown -R node:node {container_temp_dir}", use_n8n_prefix=False, user='root')
 
     print("Importiere Workflows im Container...")
+    # Dieser Befehl muss als 'node' laufen, da er auf die n8n-Konfiguration zugreift
     run_docker_command(
         container_name,
         f"import:workflow --separate --input={container_temp_dir}"
     )
 
     print("Importiere Anmeldeinformationen im Container...")
+    # Dieser Befehl muss auch als 'node' laufen
     run_docker_command(
         container_name,
         f"import:credentials --separate --input={container_temp_dir}"
     )
 
     print(f"Lösche temporäres Verzeichnis im Container: {container_temp_dir}")
-    run_docker_command(container_name, f"rm -rf {container_temp_dir}", use_n8n_prefix=False)
+    # Das Löschen muss wieder als root erfolgen
+    run_docker_command(container_name, f"rm -rf {container_temp_dir}", use_n8n_prefix=False, user='root')
 
     print(f"Daten erfolgreich importiert aus {host_source_path} auf dem Host.")
 
@@ -304,6 +317,8 @@ def main():
                 cleanup_old_backups(args.host_path, args.retention_hours)
                 print("Backup-Prozess abgeschlossen.")
         elif args.command == "import":
+            # Empfehlung: Verwende den korrekten Aufruf mit --host-path und dem Ordnernamen
+            # z.B. python3 n8n_backup.py --host-path ... n8n import backup_...
             import_n8n_data(args.container_name, args.host_path, args.backup_folder_name)
             print("Import-Prozess abgeschlossen.")
     except Exception as e:
