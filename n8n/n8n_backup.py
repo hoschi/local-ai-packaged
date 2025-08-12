@@ -11,35 +11,19 @@ import argparse
 " https://aistudio.google.com/prompts/1J7fFba4vXBjYd5eF_KvUgXkjB5c-1ukH
 """
 
-def run_docker_command(container_name, command_args, capture_output=False, use_n8n_prefix=True, user=None, volumes=None):
-    """
-    Führt einen Befehl im angegebenen Docker-Container aus, optional mit eingebundenen Volumes.
-    Argumente:
-        container_name (str): Der Name des n8n Docker-Containers.
-        command_args (list oder str): Der auszuführende Befehl als Liste von Argumenten oder als String.
-        capture_output (bool): Ob die Standardausgabe des Befehls erfasst und zurückgegeben werden soll.
-        use_n8n_prefix (bool): Ob der Befehl mit "n8n" präfixiert werden soll.
-        user (str, optional): Der Benutzer, als der der Befehl im Container ausgeführt werden soll.
-        volumes (list, optional): Eine Liste von Volume-Mappings im Format "host_path:container_path".
-    """
+def run_docker_command(container_name, command_args, capture_output=False, use_n8n_prefix=True, user=None):
     if isinstance(command_args, str):
         command_args = command_args.split()
-
     base_cmd = ["docker", "exec"]
     if user:
         base_cmd.extend(["-u", user])
-    if volumes:
-        for volume_map in volumes:
-            base_cmd.extend(["-v", volume_map])
     base_cmd.append(container_name)
-
     if use_n8n_prefix:
         cmd = base_cmd + ["n8n"] + command_args
         print(f"Führe im Container (n8n CLI, als Benutzer '{user or 'default'}') aus: {' '.join(cmd)}")
     else:
         cmd = base_cmd + command_args
         print(f"Führe im Container (Shell, als Benutzer '{user or 'default'}') aus: {' '.join(cmd)}")
-
     try:
         result = subprocess.run(
             cmd, check=True, capture_output=capture_output, text=True, encoding='utf-8'
@@ -54,15 +38,11 @@ def run_docker_command(container_name, command_args, capture_output=False, use_n
         print(f"Stdout (falls vorhanden): {stdout_msg}")
         print(f"Stderr: {stderr_msg}")
         raise
-    except FileNotFoundError:
-        print("Fehler: 'docker' wurde nicht gefunden. Stellen Sie sicher, dass Docker installiert ist.")
-        raise
     except Exception as e:
         print(f"Ein unerwarteter Fehler ist aufgetreten: {e}")
         raise
 
 def run_host_command(command, capture_output=False, shell=True):
-    # ... (Diese Funktion bleibt unverändert)
     print(f"Führe auf Host aus: {command}")
     try:
         result = subprocess.run(
@@ -78,15 +58,11 @@ def run_host_command(command, capture_output=False, shell=True):
         print(f"Stdout (falls vorhanden): {stdout_msg}")
         print(f"Stderr: {stderr_msg}")
         raise
-    except FileNotFoundError:
-        print("Fehler: Der Befehl wurde auf dem Host nicht gefunden.")
-        raise
     except Exception as e:
         print(f"Ein unerwarteter Fehler ist aufgetreten: {e}")
         raise
 
 def export_n8n_data(container_name, host_backup_base_path, backup_description=None):
-    # ... (Diese Funktion bleibt unverändert)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_dir_name = f"backup_{timestamp}"
     if backup_description:
@@ -105,7 +81,7 @@ def export_n8n_data(container_name, host_backup_base_path, backup_description=No
     run_docker_command(container_name, f"export:credentials --backup --output={container_temp_dir} --pretty")
     os.makedirs(host_destination_path, exist_ok=True)
     print(f"Kopiere Backup-Daten von Container '{container_name}:{container_temp_dir}' nach Host '{host_destination_path}'...")
-    run_host_command(f"docker cp {container_name}:{container_temp_dir}/. {host_destination_path}")
+    run_host_command(f"docker cp {container_name}:{container_temp_dir}/. '{host_destination_path}'")
     print(f"Lösche temporäres Verzeichnis im Container: {container_temp_dir}")
     run_docker_command(container_name, f"rm -rf {container_temp_dir}", use_n8n_prefix=False, user='root')
     print(f"Backup erfolgreich erstellt unter {host_destination_path} auf dem Host.")
@@ -113,44 +89,62 @@ def export_n8n_data(container_name, host_backup_base_path, backup_description=No
 
 def import_n8n_data(container_name, host_backup_base_path, backup_folder_name):
     """
-    Importiert n8n-Daten, indem das Host-Backup-Verzeichnis direkt in den Container gemountet wird.
-    Diese Methode vermeidet die Berechtigungsprobleme von 'docker cp'.
+    Importiert n8n-Daten mit einer tar-Pipe, um Berechtigungsprobleme zu umgehen.
     """
     host_source_path = os.path.join(host_backup_base_path, backup_folder_name)
-    container_import_path = "/tmp/import_data"  # Ein fester, vorhersehbarer Pfad im Container
-
     if not os.path.isdir(host_source_path):
         print(f"Fehler: Backup-Verzeichnis '{host_source_path}' auf dem Host nicht gefunden.")
-        print("Bitte stellen Sie sicher, dass der Name des Backup-Ordners korrekt ist und dieser existiert.")
         return
 
-    # Erstelle das Volume-Mapping-Argument für Docker. os.path.abspath ist wichtig für die Zuverlässigkeit.
-    volume_map = f"{os.path.abspath(host_source_path)}:{container_import_path}:ro"
-    # ":ro" sorgt dafür, dass die Daten nur gelesen (read-only) werden, was sicherer ist.
+    print("Erstelle temporäres Import-Verzeichnis im Container als Benutzer 'node'...")
+    try:
+        # Da der Standardbenutzer 'node' ist, wird das Verzeichnis mit den richtigen Berechtigungen erstellt.
+        container_temp_dir = run_docker_command(
+            container_name,
+            "mktemp -d",
+            capture_output=True,
+            use_n8n_prefix=False
+        )
+    except Exception as e:
+        print(f"Konnte temporäres Verzeichnis im Container nicht erstellen: {e}")
+        return
 
-    print(f"Binde Host-Verzeichnis '{host_source_path}' an '{container_import_path}:ro' im Container für den Import an.")
+    print(f"Temporäres Import-Verzeichnis im Container: {container_temp_dir}")
 
-    print("Importiere Workflows im Container...")
-    run_docker_command(
-        container_name,
-        f"import:workflow --separate --input={container_import_path}",
-        volumes=[volume_map]  # Hier übergeben wir das Volume
-    )
+    try:
+        # Absoluten Pfad für Zuverlässigkeit verwenden
+        host_abs_path = os.path.abspath(host_source_path)
 
-    print("Importiere Anmeldeinformationen im Container...")
-    run_docker_command(
-        container_name,
-        f"import:credentials --separate --input={container_import_path}",
-        volumes=[volume_map]  # Und hier auch
-    )
+        # Diese Pipe erstellt einen tar-Stream auf dem Host und leitet ihn an einen tar-Befehl im Container weiter.
+        # Der Befehl im Container läuft als 'node'-Benutzer und erstellt die Dateien mit der korrekten Eigentümerschaft.
+        pipe_command = f"tar -c -C '{host_abs_path}' . | docker exec -i {container_name} tar -x -C {container_temp_dir}"
+
+        print("Übertrage Backup-Daten via tar-Stream...")
+        run_host_command(pipe_command)
+        print("Datenübertragung erfolgreich.")
+
+        print("Importiere Workflows im Container...")
+        run_docker_command(
+            container_name,
+            f"import:workflow --separate --input={container_temp_dir}"
+        )
+
+        print("Importiere Anmeldeinformationen im Container...")
+        run_docker_command(
+            container_name,
+            f"import:credentials --separate --input={container_temp_dir}"
+        )
+
+    finally:
+        # Stellt sicher, dass das temporäre Verzeichnis auch bei einem Fehler gelöscht wird.
+        print(f"Lösche temporäres Verzeichnis im Container: {container_temp_dir}")
+        run_docker_command(container_name, f"rm -rf {container_temp_dir}", use_n8n_prefix=False)
 
     print(f"\nDaten erfolgreich importiert aus {host_source_path} auf dem Host.")
 
 def cleanup_old_backups(host_backup_base_path, retention_hours=24):
-    # ... (Diese Funktion bleibt unverändert)
     print(f"Bereinige alte Backups auf dem Host, die älter als {retention_hours} Stunden sind...")
     if not os.path.isdir(host_backup_base_path):
-        print(f"Basis-Backup-Verzeichnis '{host_backup_base_path}' existiert nicht. Keine Bereinigung erforderlich.")
         return
     now = datetime.datetime.now()
     deleted_count = 0
@@ -164,18 +158,13 @@ def cleanup_old_backups(host_backup_base_path, retention_hours=24):
                 timestamp_str = f"{parts[1]}_{parts[2]}"
                 backup_time = datetime.datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S")
                 if (now - backup_time).total_seconds() > retention_hours * 3600:
-                    print(f"Lösche altes Backup auf Host: {dir_name} (erstellt {backup_time.strftime('%Y-%m-%d %H:%M:%S')})")
                     shutil.rmtree(full_path)
                     deleted_count += 1
-            else:
-                print(f"Überspringe Verzeichnis '{dir_name}' aufgrund unerwarteten Namensformats.")
         except (ValueError, IndexError) as e:
-            print(f"Zeitstempel konnte nicht aus Verzeichnisnamen '{dir_name}' extrahiert werden: {e}. Überspringe.")
             continue
     print(f"{deleted_count} alte Backups auf dem Host bereinigt.")
 
 def main():
-    # ... (Diese Funktion bleibt unverändert)
     parser = argparse.ArgumentParser(
         description="Python-Skript zur Verwaltung von n8n-Daten-Backups mit Docker.",
         formatter_class=argparse.RawTextHelpFormatter
@@ -193,7 +182,6 @@ def main():
         if args.command == "export":
             exported_path = export_n8n_data(args.container_name, args.host_path, args.description)
             if exported_path:
-                print(f"\nExport abgeschlossen. Backup erstellt unter: {exported_path}")
                 cleanup_old_backups(args.host_path, args.retention_hours)
                 print("Backup-Prozess abgeschlossen.")
         elif args.command == "import":
