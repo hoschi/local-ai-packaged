@@ -122,10 +122,7 @@ def main():
     env_vars = load_env_file(args.env_file)
 
     # Filtere nur die für n8n relevanten Variablen
-    required_keys = [
-        "DB_TYPE", "DB_POSTGRESDB_HOST", "DB_POSTGRESDB_USER",
-        "POSTGRES_PASSWORD", "DB_POSTGRESDB_DATABASE", "N8N_ENCRYPTION_KEY"
-    ]
+    required_keys = [ "POSTGRES_PASSWORD", "N8N_ENCRYPTION_KEY" ]
     n8n_env_vars = {key: env_vars[key] for key in required_keys if key in env_vars}
 
     # Umbenennen für n8n-Kompatibilität
@@ -137,6 +134,11 @@ def main():
         missing = set(required_keys) - set(n8n_env_vars.keys()) - ({"POSTGRES_PASSWORD"} if "DB_POSTGRESDB_PASSWORD" in n8n_env_vars else set())
         print(f"Fehler: Folgende notwendige Variablen fehlen in der .env-Datei: {', '.join(missing)}")
         return
+
+    n8n_env_vars["DB_TYPE"]="postgresdb"
+    n8n_env_vars["DB_POSTGRESDB_HOST"]="db"
+    n8n_env_vars["DB_POSTGRESDB_USER"]="postgres"
+    n8n_env_vars["DB_POSTGRESDB_DATABASE"]="postgres"
 
     try:
         if args.command == "import":
