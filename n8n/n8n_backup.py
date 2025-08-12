@@ -7,7 +7,7 @@ import tempfile
 """
 " Usage:
 " python3 n8n/n8n_backup.py --host-path /Users/hoschi/repos/local-ai-packaged/n8n/user_backup n8n export --description 'main-instance'
-" python3 n8n/n8n_backup.py n8n import /Users/hoschi/repos/local-ai-packaged/n8n/user_backup/backup_20250812_100748_main_instance/
+" python3 n8n/n8n_backup.py --host-path /Users/hoschi/repos/local-ai-packaged/n8n/user_backup n8n import backup_20250812_100748_main_instance
 " https://aistudio.google.com/prompts/1J7fFba4vXBjYd5eF_KvUgXkjB5c-1ukH
 """
 
