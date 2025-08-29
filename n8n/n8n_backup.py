@@ -124,6 +124,32 @@ def import_n8n_data(container_name, host_backup_base_path, backup_folder_name, n
         run_docker_command(container_name, f"rm -rf {container_temp_dir}", use_n8n_prefix=False)
     print("\nImport-Prozess erfolgreich abgeschlossen.")
 
+def delete_old_backups(backup_base_path, hours=24):
+    """Löscht Backup-Verzeichnisse, die älter als eine bestimmte Stundenzahl sind."""
+    print(f"\n--- Starte Bereinigung alter Backups (älter als {hours} Stunden) ---")
+    now = datetime.datetime.now()
+    cutoff = now - datetime.timedelta(hours=hours)
+
+    for folder_name in os.listdir(backup_base_path):
+        folder_path = os.path.join(backup_base_path, folder_name)
+        if os.path.isdir(folder_path) and folder_name.startswith("backup_"):
+            try:
+                # Extrahiere den Zeitstempel aus dem Ordnernamen, z.B. backup_20231027_103000_daily
+                parts = folder_name.split('_')
+                if len(parts) >= 3:
+                    timestamp_str = f"{parts[1]}_{parts[2]}"
+                    backup_time = datetime.datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S")
+
+                    if backup_time < cutoff:
+                        print(f"Lösche altes Backup: {folder_name}")
+                        shutil.rmtree(folder_path)
+                else:
+                    print(f"Ordnername '{folder_name}' hat nicht das erwartete Format, überspringe.")
+            except (IndexError, ValueError) as e:
+                print(f"Konnte Zeitstempel für '{folder_name}' nicht verarbeiten, überspringe. Fehler: {e}")
+    print("Bereinigung abgeschlossen.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Python-Skript zur Verwaltung von n8n-Daten-Backups mit Docker.", formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--host-path", default="./n8n/user_backup", help="Basispfad für Backups.")
@@ -159,6 +185,7 @@ def main():
     try:
         if args.command == "export":
             export_n8n_data(args.container_name, args.host_path, n8n_env_vars, args.description)
+            delete_old_backups(args.host_path, 24)
         elif args.command == "import":
             import_n8n_data(args.container_name, args.host_path, args.backup_folder_name, n8n_env_vars)
     except Exception as e:
