@@ -141,7 +141,7 @@ python start_services.py --profile gpu-nvidia
 
 > [!NOTE]
 > If you have not used your Nvidia GPU with Docker before, please follow the
-> [Ollama Docker instructions](https://github.com/ollama/ollama/blob/main/docs/docker.md).
+> [Ollama Docker instructions](https://github.com/ollama/ollama/blob/main/docs/docker.mdx).
 
 ### For AMD GPU users on Linux
 
