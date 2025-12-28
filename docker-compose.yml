@@ -101,9 +101,6 @@ services:
       - n8n_storage:/home/node/.n8n
       - ./n8n/backup:/backup
       - ./shared:/data/shared
-    depends_on:
-      n8n-import:
-        condition: service_completed_successfully
 
   qdrant:
     image: qdrant/qdrant
