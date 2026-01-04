@@ -246,7 +246,7 @@ to the IP address of your cloud instance.
 
 This package includes pre-built n8n workflows in the `n8n/backup/workflows/` folder. To import them:
 
-1. Open n8n at <http://localhost:5678/>
+1. Open n8n at <http://localhost:5678/> (or your custom domain if deployed to the cloud)
 2. Go to your workflow list and click the three-dot menu or use **Import from File**
 3. Select the JSON files from the `n8n/backup/workflows/` folder on your local machine
 
