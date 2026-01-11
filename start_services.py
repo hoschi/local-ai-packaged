@@ -63,7 +63,7 @@ def start_supabase(environment=None):
     cmd.extend(["up", "-d"])
     run_command(cmd)
 
-def start_local_ai(profile=None, environment=None):
+def start_local_ai(profile=None, environment=None, essential=False):
     """Start the local AI services (using its compose file)."""
     print("Starting local AI services...")
     cmd = ["docker", "compose", "-p", "localai"]
@@ -74,7 +74,22 @@ def start_local_ai(profile=None, environment=None):
         cmd.extend(["-f", "docker-compose.override.private.yml"])
     if environment and environment == "public":
         cmd.extend(["-f", "docker-compose.override.public.yml"])
-    cmd.extend(["up", "-d"])
+    if essential:
+        services = [
+            "n8n",
+            #"n8n-import",
+            "supabase",
+            #"open-webui",
+            #"flowise",
+            "qdrant",
+            #"neo4j",
+            #"searxng",
+            #"caddy",
+            #"langfuse-web",
+        ]
+        cmd.extend(["up"] + services + ["-d"])
+    else:
+        cmd.extend(["up", "-d"])
     run_command(cmd)
 
 def generate_searxng_secret_key():
@@ -223,6 +238,8 @@ def main():
                       help='Profile to use for Docker Compose (default: cpu)')
     parser.add_argument('--environment', choices=['private', 'public'], default='private',
                       help='Environment to use for Docker Compose (default: private)')
+    parser.add_argument('--essential', action='store_true',
+                      help='Start only essential services (defined in essential_services list)')
     args = parser.parse_args()
 
     clone_supabase_repo()
@@ -242,7 +259,8 @@ def main():
     time.sleep(10)
 
     # Then start the local AI services
-    start_local_ai(args.profile, args.environment)
+    start_local_ai(args.profile, args.environment, args.essential)
 
 if __name__ == "__main__":
     main()
+
