@@ -78,7 +78,6 @@ def start_local_ai(profile=None, environment=None, essential=False):
         services = [
             "n8n",
             #"n8n-import",
-            "supabase",
             #"open-webui",
             #"flowise",
             "qdrant",
@@ -86,6 +85,7 @@ def start_local_ai(profile=None, environment=None, essential=False):
             #"searxng",
             #"caddy",
             #"langfuse-web",
+            "mattermost",
         ]
         cmd.extend(["up"] + services + ["-d"])
     else:
