@@ -28,7 +28,8 @@ x-n8n: &service-n8n
     - N8N_ENCRYPTION_KEY
     - N8N_USER_MANAGEMENT_JWT_SECRET
     - WEBHOOK_URL=${N8N_HOSTNAME:+https://}${N8N_HOSTNAME:-http://localhost:5678}
-    - NODES_EXCLUDE=[]
+    # Uncomment to enable LocalFileTrigger and ExecuteCommand nodes (disabled by default in n8n v2+)
+    # - NODES_EXCLUDE=[]
 
 x-ollama: &service-ollama
   image: ollama/ollama:latest
