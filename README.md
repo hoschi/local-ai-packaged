@@ -358,6 +358,10 @@ Here are solutions to common issues you might encounter:
 
 - **Linux GPU Support**: If you're having trouble running Ollama with GPU support on Linux, follow the [Ollama Docker instructions](https://github.com/ollama/ollama/blob/main/docs/docker.md).
 
+### n8n Node Issues
+
+- **Local File Trigger or Execute Command nodes not available**: Starting with n8n v2+, these nodes are disabled by default for security. To enable them, uncomment `NODES_EXCLUDE=[]` in the `x-n8n` section of `docker-compose.yml` and restart n8n. See [Accessing local files](#accessing-local-files) for detailed instructions.
+
 ## 👓 Recommended reading
 
 n8n is full of useful content for getting started quickly with its AI concepts
@@ -411,6 +415,26 @@ interact with the local filesystem.
 - [Read/Write Files from Disk](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.filesreadwrite/)
 - [Local File Trigger](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.localfiletrigger/)
 - [Execute Command](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.executecommand/)
+
+**Enabling Local File Trigger and Execute Command nodes**
+
+Starting with n8n v2+, the `Local File Trigger` and `Execute Command` nodes are disabled by default for security reasons. To enable them in this local/self-hosted environment:
+
+1. Open `docker-compose.yml`
+2. Find the `x-n8n` section and uncomment the `NODES_EXCLUDE` line:
+   ```yaml
+   x-n8n: &service-n8n
+     image: n8nio/n8n:latest
+     environment:
+       # ... other variables ...
+       - NODES_EXCLUDE=[]
+   ```
+3. Restart the n8n container:
+   ```bash
+   docker compose -p localai -f docker-compose.yml --profile <your-profile> up -d n8n
+   ```
+
+See [n8n 2.0 Breaking Changes](https://docs.n8n.io/2-0-breaking-changes/#disable-executecommand-and-localfiletrigger-nodes-by-default) for more details.
 
 ## 📜 License
 
